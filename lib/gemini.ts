@@ -6,7 +6,7 @@ import { ApiError, GoogleGenAI, type Model } from "@google/genai";
 
 import { getSessionSettings } from "@/lib/session-settings";
 
-const GEMINI_TIMEOUT_MS = 55_000;
+const GEMINI_TIMEOUT_MS = 20_000;
 const MODEL_CACHE_TTL_MS = 10 * 60 * 1000;
 export class GeminiConfigurationError extends Error {
   constructor(message = "Gemini is not configured. Add an API key in Settings and try again.") {
@@ -92,6 +92,8 @@ function isImageUnderstandingModel(model: Model) {
   const identity = `${id} ${model.displayName ?? ""}`.toLowerCase();
   const details = `${identity} ${model.description ?? ""}`.toLowerCase();
   if (!identity.includes("gemini")) return false;
+  // When Google reports supported actions, require generateContent.
+  if (model.supportedActions?.length && !model.supportedActions.includes("generateContent")) return false;
 
   const specialist = /\b(embedding|text[- ]to[- ]speech|tts|transcrib|audio generation|image generation|image generator|video generation|live api)\b/i;
   const specialistId = /(?:^|[-_.])(embedding|tts|transcribe|live|image)(?:$|[-_.])/i;

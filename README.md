@@ -4,7 +4,11 @@ FlowToCode is a Next.js app that sends a flowchart image directly to Google Gemi
 
 There is no local OCR pipeline. Image understanding and code generation happen through the Gemini API.
 
-Gemini responses pass through LangChain's `StructuredOutputParser` and a Zod schema before reaching the UI. The parser extracts JSON (including fenced JSON), validates every analysis field, and rejects incomplete Python, C, or Java bundles.
+Model responses pass through a Zod schema before reaching the UI. The parser extracts JSON (including fenced JSON), validates every analysis field, and rejects incomplete Python, C, or Java bundles. Images that are not flowcharts (for example a photo of a person) are detected and rejected with an explanation.
+
+### Fallback chain
+
+Requests try your selected Gemini model first, then other live-listed Gemini models, then Groq (`GROQ_API_KEY`). A model that is unavailable, rate limited, times out, or returns invalid output is skipped automatically. See `.env.example` for optional model overrides.
 
 ## Quick start
 
