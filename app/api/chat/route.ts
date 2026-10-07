@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import {
-  getGeminiContext,
-  getGeminiRequestOptions,
-  logGeminiFailure,
-  toPublicGeminiError,
-} from "@/lib/gemini";
+import { generateWithFallback, toPublicLlmError } from "@/lib/llm";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -68,27 +63,23 @@ ${history || "No earlier messages."}
 ${body.question}
 </UNTRUSTED_STUDENT_QUESTION>`;
 
-    const { client, model, outputTokenLimit } = await getGeminiContext(request);
-    const response = await client.interactions.create({
-      model,
-      input: prompt,
-      system_instruction: systemInstruction,
-      generation_config: {
-        max_output_tokens: Math.min(outputTokenLimit ?? 4_096, 8_192),
-      },
-      store: false,
-    }, getGeminiRequestOptions());
-
-    const answer = response.output_text?.trim();
-    if (!answer) throw new Error("Gemini returned an empty explanation.");
+    const { value: answer } = await generateWithFallback(request, {
+      system: systemInstruction,
+      text: prompt,
+      maxOutputTokens: 4_096,
+    }, (text) => {
+      const trimmed = text.trim();
+      if (!trimmed) throw new Error("Empty explanation.");
+      return trimmed;
+    });
 
     return NextResponse.json({ answer });
   } catch (error) {
     if (error instanceof z.ZodError || error instanceof SyntaxError) {
       return NextResponse.json({ error: "The explanation request is incomplete." }, { status: 400 });
     }
-    logGeminiFailure("Code explanation failed", error);
-    const publicError = toPublicGeminiError(error, "The explanation could not be generated. Please try again.");
+    console.error("Code explanation failed", error instanceof Error ? error.name : "UnknownError");
+    const publicError = toPublicLlmError(error, "The explanation could not be generated. Please try again.");
     const response = NextResponse.json({ error: publicError.message }, { status: publicError.status });
     response.headers.set("Cache-Control", "no-store, max-age=0");
     if (publicError.retryAfterSeconds) {
