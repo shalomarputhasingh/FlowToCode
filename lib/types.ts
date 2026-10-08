@@ -3,6 +3,18 @@ export type Language = (typeof LANGUAGES)[number];
 
 export type CodeBundle = Record<Language, string>;
 
+export type PipelineInfo = {
+  symbolTable: Array<{ name: string; type: string; scope: string; declaredAt: number }>;
+  typeDiagnostics: Array<{ nodeIndex: number; expr: string; valid: boolean; message: string }>;
+  cfgBlocks: Array<{ id: string; kind: string; nodeIds: string[]; statements: string[]; condition?: string; trueTarget?: string; falseTarget?: string; nextTarget?: string }>;
+  tac: Array<{ nodeIndex: number; raw: string; before: string[]; after: string[] }>;
+};
+
+export type ProviderInfo = {
+  provider: string;
+  model: string;
+};
+
 export type FlowAnalysis = {
   title: string;
   summary: string;
@@ -14,6 +26,8 @@ export type FlowAnalysis = {
   };
   confidence: number;
   codes: CodeBundle;
+  pipeline: PipelineInfo;
+  answeredBy: ProviderInfo;
 };
 
 export type ChatMessage = {

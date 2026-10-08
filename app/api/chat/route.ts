@@ -63,7 +63,7 @@ ${history || "No earlier messages."}
 ${body.question}
 </UNTRUSTED_STUDENT_QUESTION>`;
 
-    const { value: answer } = await generateWithFallback(request, {
+    const { value: answer, provider, model } = await generateWithFallback(request, {
       system: systemInstruction,
       text: prompt,
       maxOutputTokens: 4_096,
@@ -73,7 +73,7 @@ ${body.question}
       return trimmed;
     });
 
-    return NextResponse.json({ answer });
+    return NextResponse.json({ answer, answeredBy: { provider, model } });
   } catch (error) {
     if (error instanceof z.ZodError || error instanceof SyntaxError) {
       return NextResponse.json({ error: "The explanation request is incomplete." }, { status: 400 });

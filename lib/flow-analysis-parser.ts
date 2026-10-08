@@ -2,6 +2,24 @@ import "server-only";
 
 import { z } from "zod";
 
+// The AI's job is pure perception (stages 1-5): read shapes, text, and
+// arrows off the image into this graph. Everything after that — symbol
+// table, types, CFG, TAC, optimization, and code generation — is handled
+// by the deterministic compiler pipeline in lib/compiler/, never by the model.
+const graphSchema = z.object({
+  startId: z.string().trim().min(1).max(100),
+  nodes: z.array(z.object({
+    id: z.string().trim().min(1).max(100),
+    shape: z.enum(["terminal", "process", "decision", "io"]),
+    text: z.string().trim().min(0).max(500),
+  })).min(1).max(200),
+  edges: z.array(z.object({
+    from: z.string().trim().min(1).max(100),
+    to: z.string().trim().min(1).max(100),
+    label: z.string().trim().max(50).optional(),
+  })).max(400),
+}).strip();
+
 const analysisFields = {
   title: z.string().trim().min(1).max(200),
   summary: z.string().trim().min(1).max(5000),
@@ -12,11 +30,7 @@ const analysisFields = {
     space: z.string().trim().min(1).max(200),
   }),
   confidence: z.number().min(0).max(1),
-  codes: z.object({
-    python: z.string().min(1).max(100_000),
-    c: z.string().min(1).max(100_000),
-    java: z.string().min(1).max(100_000),
-  }),
+  graph: graphSchema,
 };
 
 export const flowAnalysisSchema = z.object(analysisFields).strip();
@@ -34,6 +48,7 @@ export const flowchartVerdictSchema = z.discriminatedUnion("isFlowchart", [
 ]);
 
 export type FlowchartVerdict = z.infer<typeof flowchartVerdictSchema>;
+export type FlowGraphInput = z.infer<typeof graphSchema>;
 
 export const flowAnalysisJsonSchema = {
   type: "object",
@@ -54,13 +69,35 @@ export const flowAnalysisJsonSchema = {
       },
     },
     confidence: { type: "number" },
-    codes: {
+    graph: {
       type: "object",
-      required: ["python", "c", "java"],
+      required: ["startId", "nodes", "edges"],
       properties: {
-        python: { type: "string" },
-        c: { type: "string" },
-        java: { type: "string" },
+        startId: { type: "string" },
+        nodes: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["id", "shape", "text"],
+            properties: {
+              id: { type: "string" },
+              shape: { type: "string", enum: ["terminal", "process", "decision", "io"] },
+              text: { type: "string" },
+            },
+          },
+        },
+        edges: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["from", "to"],
+            properties: {
+              from: { type: "string" },
+              to: { type: "string" },
+              label: { type: "string" },
+            },
+          },
+        },
       },
     },
   },
@@ -70,7 +107,13 @@ export const flowAnalysisJsonSchema = {
 export const flowAnalysisFormatInstructions = `Respond with a single JSON object and nothing else (no Markdown fences).
 If the image is NOT a flowchart, return {"isFlowchart": false, "reason": "<one sentence saying what the image shows>"}.
 If it is a flowchart, return:
-{"isFlowchart": true, "reason": "<short note>", "title": string, "summary": string, "algorithm": string[], "assumptions": string[], "complexity": {"time": string, "space": string}, "confidence": number (0-1), "codes": {"python": string, "c": string, "java": string}}`;
+{"isFlowchart": true, "reason": "<short note>", "title": string, "summary": string, "algorithm": string[], "assumptions": string[], "complexity": {"time": string, "space": string}, "confidence": number (0-1),
+ "graph": {
+   "startId": "<id of the Start/entry terminal node>",
+   "nodes": [{"id": string, "shape": "terminal"|"process"|"decision"|"io", "text": string}],
+   "edges": [{"from": string, "to": string, "label": "Yes"|"No"|""}]
+ }}
+Every process/io node's "text" must be a single statement in the exact form "NAME = expression", "Read NAME[, NAME...]", or "Print expression" using only + - * / % and comparisons > < >= <= == != and && || ! — because this text is parsed by a real deterministic compiler afterward, not re-interpreted by you. Every decision node's "text" must be a bare boolean condition, e.g. "N % 2 == 0". Label every edge leaving a decision node "Yes" or "No" to match the diagram's branch.`;
 
 function extractJson(text: string) {
   const trimmed = text.trim();

@@ -311,3 +311,44 @@ footer p { margin: 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+/* Provider/model badge — shows which AI actually answered this request. */
+.provider-badge { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border: 1px solid var(--line); background: var(--white); font-family: var(--mono); font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.provider-badge b { width: 7px; height: 7px; border-radius: 50%; background: var(--aqua); }
+.provider-badge[data-provider="groq"] b { background: var(--coral); }
+.provider-badge span { color: var(--ink); }
+.message .provider-badge { margin-top: 7px; padding: 3px 8px; font-size: 0.56rem; }
+
+/* Pipeline viewer — stages 6-12 run deterministically, no AI involved. */
+.pipeline-deck { margin-top: 54px; border: 1px solid var(--ink); background: var(--white); padding: clamp(24px, 4vw, 46px); }
+.pipeline-deck .deck-heading { margin-bottom: 30px; }
+.pipeline-note { max-width: 720px; margin: -10px 0 30px; color: var(--muted); font-size: 0.82rem; line-height: 1.6; }
+.pipeline-note b { color: var(--ink); }
+.pipeline-stages { display: grid; gap: 10px; }
+.pipeline-stage { border: 1px solid var(--line); background: var(--paper); }
+.pipeline-stage > summary { display: flex; align-items: center; gap: 14px; padding: 14px 16px; cursor: pointer; list-style: none; }
+.pipeline-stage > summary::-webkit-details-marker { display: none; }
+.pipeline-stage > summary b { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border: 1px solid var(--ink); font-family: var(--mono); font-size: 0.68rem; font-weight: 800; background: var(--white); }
+.pipeline-stage > summary strong { font-family: var(--display); font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.pipeline-stage > summary small { margin-left: auto; color: var(--muted); font-size: 0.72rem; }
+.pipeline-stage[open] > summary b { background: var(--violet); border-color: var(--violet); color: var(--white); }
+.pipeline-body { padding: 0 16px 18px 58px; }
+.pipeline-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 0.74rem; }
+.pipeline-table th { text-align: left; padding: 6px 10px; color: var(--muted); font-weight: 700; text-transform: uppercase; font-size: 0.6rem; border-bottom: 1px solid var(--line); }
+.pipeline-table td { padding: 6px 10px; border-bottom: 1px solid var(--line); color: var(--ink); vertical-align: top; }
+.pipeline-table tr:last-child td { border-bottom: 0; }
+.pipeline-ok { color: var(--aqua); font-weight: 800; }
+.pipeline-bad { color: var(--coral); font-weight: 800; }
+.pipeline-block { margin-bottom: 14px; padding: 10px 12px; border-left: 3px solid var(--violet); background: var(--white); font-family: var(--mono); font-size: 0.74rem; line-height: 1.6; }
+.pipeline-block.is-decision { border-left-color: var(--coral); }
+.pipeline-block.is-exit { border-left-color: var(--muted); }
+.pipeline-block b { display: block; margin-bottom: 4px; color: var(--muted); font-size: 0.62rem; text-transform: uppercase; }
+.pipeline-tac { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.pipeline-tac > div { padding: 8px 10px; background: var(--white); border: 1px solid var(--line); }
+.pipeline-tac small { display: block; margin-bottom: 4px; color: var(--muted); font-size: 0.6rem; text-transform: uppercase; }
+.pipeline-tac pre, .pipeline-code-raw { margin: 0; font-family: var(--mono); font-size: 0.72rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+  .pipeline-tac { grid-template-columns: 1fr; }
+  .pipeline-body { padding: 0 14px 16px 16px; }
+}
