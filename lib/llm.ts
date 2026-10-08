@@ -7,6 +7,7 @@ import {
   getGeminiClient,
   type GeminiModelOption,
 } from "@/lib/gemini";
+import { getAvailableGroqModels, type GroqModelOption } from "@/lib/groq";
 
 const ATTEMPT_TIMEOUT_MS = 20_000;
 const TOTAL_BUDGET_MS = 55_000;
@@ -145,21 +146,56 @@ function envList(name: string, fallback: string[]) {
   return value?.length ? value : fallback;
 }
 
-function fallbackCandidates(llm: LlmRequest): Candidate[] {
-  // Groq (fast hosted open models). Both default models accept images.
-  const groqModels = envList("GROQ_MODELS", [
-    "meta-llama/llama-4-scout-17b-16e-instruct",
-    "meta-llama/llama-4-maverick-17b-128e-instruct",
-  ]);
-  const groq = openAiCandidates({
+// Used only when Groq's live model list cannot be fetched.
+const STATIC_GROQ_MODELS = [
+  "meta-llama/llama-4-scout-17b-16e-instruct",
+  "meta-llama/llama-4-maverick-17b-128e-instruct",
+];
+
+function rankGroqModel(model: GroqModelOption) {
+  const id = model.id.toLowerCase();
+  let rank = 0;
+  if (/preview|exp/.test(id)) rank += 10;
+  if (/maverick/.test(id)) rank += 1; // Scout is lighter/faster; try it first.
+  if (/70b|90b|405b/.test(id)) rank += 3;
+  return rank;
+}
+
+async function fallbackCandidates(llm: LlmRequest): Promise<Candidate[]> {
+  const apiKey = process.env.GROQ_API_KEY?.trim();
+  if (!apiKey) return [];
+
+  let models: GroqModelOption[];
+  try {
+    models = await getAvailableGroqModels(apiKey);
+  } catch {
+    models = [];
+  }
+
+  // A free-tier key only ever sees the handful of models its plan grants,
+  // so the override list still applies when it is set, but otherwise we
+  // trust whatever Groq's API actually reports as available right now.
+  const envOverride = process.env.GROQ_MODELS?.trim();
+  let ids: string[];
+  if (envOverride) {
+    ids = envList("GROQ_MODELS", STATIC_GROQ_MODELS);
+  } else if (models.length > 0) {
+    const pool = llm.image ? models.filter((m) => m.visionCapable) : models;
+    ids = [...(pool.length > 0 ? pool : models)]
+      .sort((a, b) => rankGroqModel(a) - rankGroqModel(b))
+      .map((m) => m.id);
+  } else {
+    ids = [...STATIC_GROQ_MODELS];
+  }
+  if (ids.length === 0) ids = [...STATIC_GROQ_MODELS];
+
+  return openAiCandidates({
     provider: "groq",
     baseUrl: "https://api.groq.com/openai/v1",
-    apiKey: process.env.GROQ_API_KEY?.trim(),
-    models: groqModels,
-    vision: groqModels.map(() => true),
+    apiKey,
+    models: ids,
+    vision: ids.map(() => true),
   }, llm);
-
-  return groq;
 }
 
 /**
@@ -173,7 +209,8 @@ export async function generateWithFallback<T>(
   parse: (text: string) => T,
 ): Promise<{ value: T; provider: string; model: string }> {
   const deadline = Date.now() + TOTAL_BUDGET_MS;
-  const candidates = [...await geminiCandidates(request, llm), ...fallbackCandidates(llm)];
+  const [geminiList, groqList] = await Promise.all([geminiCandidates(request, llm), fallbackCandidates(llm)]);
+  const candidates = [...geminiList, ...groqList];
   if (candidates.length === 0) throw new GeminiConfigurationError(
     "No AI provider is configured. Add a Gemini API key in Settings, or set GROQ_API_KEY.",
   );

@@ -3,7 +3,7 @@
 import { ChangeEvent, DragEvent, FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
-import type { ChatMessage, CodeBundle, FlowAnalysis, Language } from "@/lib/types";
+import type { ChatMessage, CodeBundle, FlowAnalysis, Language, ProviderInfo } from "@/lib/types";
 
 const languageLabels: Record<Language, string> = {
   python: "Python",
@@ -23,6 +23,104 @@ function responseError(payload: unknown, fallback: string) {
     if (typeof value === "string") return value.replace(/\bGemini\b/g, "AI service");
   }
   return fallback;
+}
+
+function ProviderBadge({ info }: { info: ProviderInfo | null }) {
+  if (!info) return null;
+  return (
+    <span className="provider-badge" data-provider={info.provider}>
+      <b aria-hidden="true" />
+      Answered by <span>{info.provider === "gemini" ? "Gemini" : "Groq"} · {info.model}</span>
+    </span>
+  );
+}
+
+function PipelineDeck({ pipeline, codes }: { pipeline: FlowAnalysis["pipeline"]; codes: CodeBundle }) {
+  return (
+    <section className="pipeline-deck" aria-label="Deterministic compiler pipeline">
+      <div className="deck-heading">
+        <div><p className="kicker">Stages 6–12 · no AI involved</p><h2>From graph to code, deterministically</h2></div>
+      </div>
+      <p className="pipeline-note">
+        The AI only perceives the diagram (shapes, text, arrows). Everything below — <b>symbol table</b>, <b>type inference</b>,{" "}
+        <b>type checking</b>, <b>control-flow graph</b>, <b>three-address code</b>, <b>optimization</b>, and <b>code generation</b> — runs as
+        ordinary deterministic TypeScript against the recovered graph, every time, the same way.
+      </p>
+      <div className="pipeline-stages">
+        <details className="pipeline-stage">
+          <summary><b>06</b><strong>Symbol table</strong><small>{pipeline.symbolTable.length} symbol(s)</small></summary>
+          <div className="pipeline-body">
+            <table className="pipeline-table">
+              <thead><tr><th>Name</th><th>Type</th><th>Scope</th><th>Declared at step</th></tr></thead>
+              <tbody>
+                {pipeline.symbolTable.map((entry) => (
+                  <tr key={entry.name}><td>{entry.name}</td><td>{entry.type}</td><td>{entry.scope}</td><td>{entry.declaredAt}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+
+        <details className="pipeline-stage">
+          <summary><b>07–08</b><strong>Type inference &amp; checking</strong><small>{pipeline.typeDiagnostics.filter((d) => !d.valid).length} issue(s)</small></summary>
+          <div className="pipeline-body">
+            {pipeline.typeDiagnostics.length === 0 ? <p className="pipeline-note">No binary expressions to check.</p> : (
+              <table className="pipeline-table">
+                <thead><tr><th>Expression</th><th>Result</th><th>Detail</th></tr></thead>
+                <tbody>
+                  {pipeline.typeDiagnostics.map((d, i) => (
+                    <tr key={`${d.expr}-${i}`}>
+                      <td>{d.expr}</td>
+                      <td className={d.valid ? "pipeline-ok" : "pipeline-bad"}>{d.valid ? "valid ✓" : "ERROR ✗"}</td>
+                      <td>{d.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </details>
+
+        <details className="pipeline-stage">
+          <summary><b>09</b><strong>Control-flow graph</strong><small>{pipeline.cfgBlocks.length} basic block(s)</small></summary>
+          <div className="pipeline-body">
+            {pipeline.cfgBlocks.map((block) => (
+              <div key={block.id} className={`pipeline-block ${block.kind === "decision" ? "is-decision" : block.kind === "exit" ? "is-exit" : ""}`}>
+                <b>{block.id} · {block.kind}</b>
+                {block.condition && <div>if {block.condition} → yes:{block.trueTarget ?? "end"} no:{block.falseTarget ?? "end"}</div>}
+                {block.statements.map((s, i) => <div key={i}>{s}</div>)}
+                {block.nextTarget && <div>→ {block.nextTarget}</div>}
+              </div>
+            ))}
+          </div>
+        </details>
+
+        <details className="pipeline-stage">
+          <summary><b>10–11</b><strong>Three-address code &amp; optimization</strong><small>constant folding · CSE · dead-code elimination</small></summary>
+          <div className="pipeline-body">
+            {pipeline.tac.map((entry) => (
+              <div key={entry.nodeIndex} className="pipeline-tac">
+                <div><small>Before — {entry.raw}</small><pre>{entry.before.join("\n") || "(no temporaries needed)"}</pre></div>
+                <div><small>After optimization</small><pre>{entry.after.join("\n") || "(no temporaries needed)"}</pre></div>
+              </div>
+            ))}
+          </div>
+        </details>
+
+        <details className="pipeline-stage" open>
+          <summary><b>12</b><strong>Code generation</strong><small>Python · C · Java</small></summary>
+          <div className="pipeline-body">
+            {(["python", "c", "java"] as Language[]).map((lang) => (
+              <div key={lang} style={{ marginBottom: 14 }}>
+                <small style={{ display: "block", marginBottom: 4, textTransform: "uppercase", color: "var(--muted)", fontSize: "0.62rem" }}>{languageLabels[lang]}</small>
+                <pre className="pipeline-code-raw">{codes[lang]}</pre>
+              </div>
+            ))}
+          </div>
+        </details>
+      </div>
+    </section>
+  );
 }
 
 function retryAfterSeconds(response: Response) {
@@ -48,6 +146,9 @@ export default function Home() {
   const [question, setQuestion] = useState("");
   const [chatting, setChatting] = useState(false);
   const [geminiCooldown, setGeminiCooldown] = useState(0);
+  const [answeredBy, setAnsweredBy] = useState<ProviderInfo | null>(null);
+  const [tutorProvider, setTutorProvider] = useState<ProviderInfo | null>(null);
+  const [pipeline, setPipeline] = useState<FlowAnalysis["pipeline"] | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const chatEnd = useRef<HTMLDivElement>(null);
 
@@ -124,6 +225,8 @@ export default function Home() {
       const nextAnalysis = payload as FlowAnalysis;
       setAnalysis(nextAnalysis);
       setCodes(nextAnalysis.codes);
+      setPipeline(nextAnalysis.pipeline);
+      setAnsweredBy(nextAnalysis.answeredBy);
       setMessages([{
         role: "assistant",
         content: `I’ve mapped “${nextAnalysis.title}”. Ask me about a branch, loop, variable, or any line of code.`,
@@ -131,6 +234,7 @@ export default function Home() {
     } catch (caught) {
       setAnalysis(null);
       setCodes(null);
+      setPipeline(null);
       setError(caught instanceof Error ? caught.message : "The AI service could not read this flowchart.");
     } finally {
       setAnalyzing(false);
@@ -217,6 +321,8 @@ export default function Home() {
         throw new Error(responseError(payload, "The tutor could not answer right now."));
       }
       setMessages((current) => [...current, { role: "assistant", content: (payload as { answer: string }).answer }]);
+      const nextProvider = (payload as { answeredBy?: ProviderInfo }).answeredBy;
+      if (nextProvider) setTutorProvider(nextProvider);
     } catch (caught) {
       setMessages((current) => [...current, {
         role: "assistant",
@@ -294,6 +400,7 @@ export default function Home() {
 
         <aside className="logic-panel">
           <div className="section-label"><span>Recovered logic</span><small>{analysis ? `${Math.round(analysis.confidence * 100)}% confidence` : "Waiting"}</small></div>
+          {analysis && <ProviderBadge info={answeredBy} />}
           {!analysis ? (
             <div className="logic-empty">
               <div className={`scan-path ${analyzing ? "is-scanning" : ""}`} aria-hidden="true">
@@ -376,6 +483,7 @@ export default function Home() {
               <span className="tutor-orbit" aria-hidden="true"><i /></span>
               <div><p className="kicker">AI code tutor</p><h2>Question the logic</h2></div>
               <p>Ask about the current language. The tutor sees the recovered algorithm and your edited code.</p>
+              <ProviderBadge info={tutorProvider ?? answeredBy} />
             </div>
             <div className="chat-shell">
               <div className="messages" aria-live="polite">
@@ -400,6 +508,8 @@ export default function Home() {
           </section>
         </section>
       )}
+
+      {analysis && pipeline && codes && <PipelineDeck pipeline={pipeline} codes={codes} />}
 
       <footer>
         <span>FLOWTOCODE</span>
