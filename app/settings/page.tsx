@@ -27,8 +27,8 @@ export default function SettingsPage() {
         <div>
           <h1>Choose the<br /><span>thinking engine.</span></h1>
           <p>
-            Connect Google Gemini and the isolated SandboxAPI runner from one private panel.
-            FlowToCode verifies both connections before using them.
+            Connect Google Gemini, Groq fallback, and the isolated SandboxAPI runner from one private panel.
+            FlowToCode verifies every connection before using it.
           </p>
         </div>
       </section>
