@@ -137,8 +137,18 @@ export type IRStmt =
 function findJoin(cfg: Cfg, a: string | undefined, b: string | undefined, stopAt: string | null): string | null {
   const fromA = [...reachableFrom(cfg, a)];
   const setB = reachableFrom(cfg, b);
-  for (const id of fromA) if (setB.has(id)) return id;
-  return stopAt;
+  const common = fromA.filter((id) => setB.has(id));
+  if (common.length === 0) return stopAt;
+  if (common.length === 1) return common[0];
+  // Branches can reconverge more than once before the real merge point (e.g. two
+  // decisions sharing one intermediate box that both then flow into the same exit).
+  // The correct join is the node every OTHER shared node still flows into — the
+  // downstream-most common node — not just the first one reached by chance.
+  for (const candidate of common) {
+    const isDownstreamOfAll = common.every((other) => other === candidate || reachableFrom(cfg, other).has(candidate));
+    if (isDownstreamOfAll) return candidate;
+  }
+  return common[0];
 }
 
 /** Stage 12 prerequisite: recovers structured if/while control flow from the raw block graph (classic flowchart -> code structuring). */
