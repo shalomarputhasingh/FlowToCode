@@ -34,6 +34,7 @@ type GroqSettingsResponse = {
   configured?: boolean;
   source?: "session" | "environment" | "none";
   models?: Array<{ id: string; visionCapable: boolean }>;
+  selectedModel?: string | null;
   error?: string;
 };
 
@@ -73,13 +74,17 @@ function formatTokens(value?: number) {
 
 function GroqSettingsCard() {
   const keyId = useId();
+  const modelId = useId();
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [configured, setConfigured] = useState(false);
   const [source, setSource] = useState<"session" | "environment" | "none">("none");
-  const [modelCount, setModelCount] = useState(0);
+  const [models, setModels] = useState<Array<{ id: string; visionCapable: boolean }>>([]);
+  const [selectedModel, setSelectedModel] = useState("");
+  const [savedModel, setSavedModel] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingModel, setSavingModel] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -87,7 +92,19 @@ function GroqSettingsCard() {
   const applyGroqSettings = useCallback((payload: GroqSettingsResponse) => {
     setConfigured(Boolean(payload.configured));
     setSource(payload.source ?? "none");
-    setModelCount(payload.models?.length ?? 0);
+    const nextModels = payload.models ?? [];
+    setModels(nextModels);
+    const nextSelected = payload.selectedModel ?? "";
+    if (nextSelected) {
+      setSelectedModel(nextSelected);
+      setSavedModel(nextSelected);
+    } else if (nextModels.length) {
+      setSelectedModel((current) => current || nextModels[0].id);
+      setSavedModel("");
+    } else {
+      setSelectedModel("");
+      setSavedModel("");
+    }
   }, []);
 
   const loadGroqSettings = useCallback(async () => {
@@ -141,6 +158,29 @@ function GroqSettingsCard() {
     }
   };
 
+  const saveGroqModel = async () => {
+    if (!selectedModel || selectedModel === savedModel) return;
+    setSavingModel(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/groq-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: selectedModel }),
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(readableError(payload, "Could not save that model."));
+      applyGroqSettings((payload ?? { selectedModel }) as GroqSettingsResponse);
+      setSavedModel(selectedModel);
+      setNotice("Preferred Groq model saved.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not save that model.");
+    } finally {
+      setSavingModel(false);
+    }
+  };
+
   const clearGroq = async () => {
     setClearing(true);
     setError("");
@@ -174,7 +214,7 @@ function GroqSettingsCard() {
         <span className="flow-settings__step">03</span>
         <div>
           <h3>Connect Groq (fallback)</h3>
-          <p>Used automatically if Gemini is unavailable or rate-limited. Free-tier keys work fine.</p>
+          <p>Used automatically if Gemini is unavailable, and preferred for the chat tutor. Free-tier keys work fine.</p>
         </div>
         <div className={`flow-settings__state ${configured ? "is-ready" : ""}`} aria-live="polite">
           <span aria-hidden="true" />{statusLabel}
@@ -199,7 +239,6 @@ function GroqSettingsCard() {
       </div>
       <p className="flow-settings__hint">
         The live model list is fetched straight from Groq for this key — only the models your plan actually grants show up.{" "}
-        {configured && modelCount > 0 && `Currently ${modelCount} model(s) available.`}{" "}
         <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer">Get a free key ↗</a>
       </p>
 
@@ -213,6 +252,32 @@ function GroqSettingsCard() {
           </button>
         )}
       </div>
+
+      {configured && models.length > 0 && (
+        <div className="flow-settings__field">
+          <label className="flow-settings__label" htmlFor={modelId}>Preferred model</label>
+          <select
+            id={modelId}
+            value={selectedModel}
+            onChange={(event) => setSelectedModel(event.target.value)}
+            disabled={loading}
+          >
+            {models.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.id}{model.visionCapable ? " (vision)" : ""}
+              </option>
+            ))}
+          </select>
+          <button
+            className="flow-settings__primary flow-settings__save-model"
+            type="button"
+            onClick={saveGroqModel}
+            disabled={!selectedModel || selectedModel === savedModel || savingModel}
+          >
+            {savingModel ? "Saving…" : selectedModel === savedModel ? "Model saved" : "Save model"}
+          </button>
+        </div>
+      )}
 
       {(notice || error) && (
         <div className={`flow-settings__notice ${error ? "is-error" : ""}`} role={error ? "alert" : "status"}>

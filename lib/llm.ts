@@ -162,7 +162,8 @@ function rankGroqModel(model: GroqModelOption) {
 }
 
 async function fallbackCandidates(request: Request, llm: LlmRequest): Promise<Candidate[]> {
-  const apiKey = getEffectiveGroqSettings(request).apiKey;
+  const groqSettings = getEffectiveGroqSettings(request);
+  const apiKey = groqSettings.apiKey;
   if (!apiKey) return [];
 
   let models: GroqModelOption[];
@@ -189,6 +190,9 @@ async function fallbackCandidates(request: Request, llm: LlmRequest): Promise<Ca
   }
   if (ids.length === 0) ids = [...STATIC_GROQ_MODELS];
 
+  const preferred = groqSettings.model?.trim();
+  if (preferred && ids.includes(preferred)) ids = [preferred, ...ids.filter((id) => id !== preferred)];
+
   return openAiCandidates({
     provider: "groq",
     baseUrl: "https://api.groq.com/openai/v1",
@@ -201,16 +205,21 @@ async function fallbackCandidates(request: Request, llm: LlmRequest): Promise<Ca
 /**
  * Runs the request against Gemini models first, then Groq Grok,
  * moving to the next candidate on any failure, including output that fails
- * `parse`. Returns the first successfully parsed value.
+ * `parse`. Returns the first successfully parsed value. Pass
+ * `preferProvider: "groq"` to try Groq's candidates before Gemini's
+ * (used for the chat tutor, which does not need vision).
  */
 export async function generateWithFallback<T>(
   request: Request,
   llm: LlmRequest,
   parse: (text: string) => T,
+  options?: { preferProvider?: "gemini" | "groq" },
 ): Promise<{ value: T; provider: string; model: string }> {
   const deadline = Date.now() + TOTAL_BUDGET_MS;
   const [geminiList, groqList] = await Promise.all([geminiCandidates(request, llm), fallbackCandidates(request, llm)]);
-  const candidates = [...geminiList, ...groqList];
+  const candidates = options?.preferProvider === "groq"
+    ? [...groqList, ...geminiList]
+    : [...geminiList, ...groqList];
   if (candidates.length === 0) throw new GeminiConfigurationError(
     "No AI provider is configured. Add a Gemini API key in Settings, or set GROQ_API_KEY.",
   );

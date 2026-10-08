@@ -3,7 +3,7 @@
 import { ChangeEvent, DragEvent, FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
-import type { ChatMessage, CodeBundle, FlowAnalysis, Language, ProviderInfo } from "@/lib/types";
+import type { ChatMessage, CodeBundle, FlowAnalysis, Language } from "@/lib/types";
 
 const languageLabels: Record<Language, string> = {
   python: "Python",
@@ -23,16 +23,6 @@ function responseError(payload: unknown, fallback: string) {
     if (typeof value === "string") return value.replace(/\bGemini\b/g, "AI service");
   }
   return fallback;
-}
-
-function ProviderBadge({ info }: { info: ProviderInfo | null }) {
-  if (!info) return null;
-  return (
-    <span className="provider-badge" data-provider={info.provider}>
-      <b aria-hidden="true" />
-      Answered by <span>{info.provider === "gemini" ? "Gemini" : "Groq"} · {info.model}</span>
-    </span>
-  );
 }
 
 function PipelineDeck({ pipeline, codes }: { pipeline: FlowAnalysis["pipeline"]; codes: CodeBundle }) {
@@ -146,8 +136,6 @@ export default function Home() {
   const [question, setQuestion] = useState("");
   const [chatting, setChatting] = useState(false);
   const [geminiCooldown, setGeminiCooldown] = useState(0);
-  const [answeredBy, setAnsweredBy] = useState<ProviderInfo | null>(null);
-  const [tutorProvider, setTutorProvider] = useState<ProviderInfo | null>(null);
   const [pipeline, setPipeline] = useState<FlowAnalysis["pipeline"] | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const chatEnd = useRef<HTMLDivElement>(null);
@@ -226,7 +214,6 @@ export default function Home() {
       setAnalysis(nextAnalysis);
       setCodes(nextAnalysis.codes);
       setPipeline(nextAnalysis.pipeline);
-      setAnsweredBy(nextAnalysis.answeredBy);
       setStdin(nextAnalysis.pipeline.sampleInput);
       setMessages([{
         role: "assistant",
@@ -322,8 +309,6 @@ export default function Home() {
         throw new Error(responseError(payload, "The tutor could not answer right now."));
       }
       setMessages((current) => [...current, { role: "assistant", content: (payload as { answer: string }).answer }]);
-      const nextProvider = (payload as { answeredBy?: ProviderInfo }).answeredBy;
-      if (nextProvider) setTutorProvider(nextProvider);
     } catch (caught) {
       setMessages((current) => [...current, {
         role: "assistant",
@@ -344,7 +329,7 @@ export default function Home() {
         <div className="topbar-actions">
           <Link className="settings-link" href="/settings">Settings</Link>
           <div className="topbar-note">
-            <span className="live-dot" /> AI vision workspace
+            <span className="live-dot" /> Live
           </div>
         </div>
       </header>
@@ -401,7 +386,6 @@ export default function Home() {
 
         <aside className="logic-panel">
           <div className="section-label"><span>Recovered logic</span><small>{analysis ? `${Math.round(analysis.confidence * 100)}% confidence` : "Waiting"}</small></div>
-          {analysis && <ProviderBadge info={answeredBy} />}
           {!analysis ? (
             <div className="logic-empty">
               <div className={`scan-path ${analyzing ? "is-scanning" : ""}`} aria-hidden="true">
@@ -484,7 +468,6 @@ export default function Home() {
               <span className="tutor-orbit" aria-hidden="true"><i /></span>
               <div><p className="kicker">AI code tutor</p><h2>Question the logic</h2></div>
               <p>Ask about the current language. The tutor sees the recovered algorithm and your edited code.</p>
-              <ProviderBadge info={tutorProvider ?? answeredBy} />
             </div>
             <div className="chat-shell">
               <div className="messages" aria-live="polite">
@@ -514,7 +497,7 @@ export default function Home() {
 
       <footer>
         <span>FLOWTOCODE</span>
-        <p>AI-generated code can be wrong. Review assumptions and test with representative inputs.</p>
+        <p>Flowchart in. Working code out.</p>
       </footer>
     </main>
   );
