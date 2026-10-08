@@ -11,6 +11,7 @@ export type SessionSettings = {
   apiKey?: string;
   model?: string;
   groqApiKey?: string;
+  groqModel?: string;
   sandboxApiKey?: string;
   expiresAt: number;
   updatedAt: number;
@@ -55,7 +56,7 @@ function cleanExpiredSessions() {
 }
 
 function hasStoredValues(settings: SessionSettings) {
-  return Boolean(settings.apiKey || settings.model || settings.groqApiKey || settings.sandboxApiKey);
+  return Boolean(settings.apiKey || settings.model || settings.groqApiKey || settings.groqModel || settings.sandboxApiKey);
 }
 
 export function getSessionSettings(request: Request) {

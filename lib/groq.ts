@@ -24,7 +24,8 @@ export function getEffectiveGroqSettings(request: Request) {
   const environmentKey = getEnvironmentGroqApiKey();
   const apiKey = session?.groqApiKey || environmentKey || null;
   const keySource: "session" | "environment" | "none" = session?.groqApiKey ? "session" : environmentKey ? "environment" : "none";
-  return { apiKey, keySource } as const;
+  const model = session?.groqModel || null;
+  return { apiKey, keySource, model } as const;
 }
 
 export type GroqModelOption = {

@@ -71,7 +71,7 @@ ${body.question}
       const trimmed = text.trim();
       if (!trimmed) throw new Error("Empty explanation.");
       return trimmed;
-    });
+    }, { preferProvider: "groq" });
 
     return NextResponse.json({ answer, answeredBy: { provider, model } });
   } catch (error) {
