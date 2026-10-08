@@ -123,6 +123,7 @@ export async function POST(request: Request) {
         typeDiagnostics: pipeline.typeDiagnostics,
         cfgBlocks: pipeline.cfgBlocks,
         tac: pipeline.tac,
+        sampleInput: pipeline.sampleInput,
       },
       answeredBy: { provider, model },
     });

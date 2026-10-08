@@ -6,6 +6,7 @@ import { typeCheck, TypeDiagnostic } from "./type-checker";
 import { statementToTac, eliminateDeadCode, tacToString, NodeTac } from "./tac";
 import { generateCode } from "./codegen";
 import { exprToString } from "./expr-parser";
+import { buildSampleInput } from "./sample-input";
 
 export type PipelineStageResult = {
   symbolTable: Array<{ name: string; type: string; scope: string; declaredAt: number }>;
@@ -13,6 +14,7 @@ export type PipelineStageResult = {
   cfgBlocks: Array<{ id: string; kind: string; nodeIds: string[]; statements: string[]; condition?: string; trueTarget?: string; falseTarget?: string; nextTarget?: string }>;
   tac: Array<{ nodeIndex: number; raw: string; before: string[]; after: string[] }>;
   code: { python: string; c: string; java: string };
+  sampleInput: string;
 };
 
 /**
@@ -58,5 +60,6 @@ export function runCompilerPipeline(graph: FlowGraph): PipelineStageResult {
     cfgBlocks,
     tac,
     code,
+    sampleInput: buildSampleInput(cfg.orderedStatements, symbolTable),
   };
 }

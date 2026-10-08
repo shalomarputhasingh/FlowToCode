@@ -30,6 +30,13 @@ type RunnerSettingsResponse = {
   error?: string;
 };
 
+type GroqSettingsResponse = {
+  configured?: boolean;
+  source?: "session" | "environment" | "none";
+  models?: Array<{ id: string; visionCapable: boolean }>;
+  error?: string;
+};
+
 export type SettingsPanelProps = {
   endpoint?: string;
   onConfiguredChange?: (configured: boolean) => void;
@@ -62,6 +69,158 @@ function readableError(payload: unknown, fallback: string) {
 function formatTokens(value?: number) {
   if (!value) return null;
   return new Intl.NumberFormat("en", { notation: "compact" }).format(value);
+}
+
+function GroqSettingsCard() {
+  const keyId = useId();
+  const [apiKey, setApiKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
+  const [configured, setConfigured] = useState(false);
+  const [source, setSource] = useState<"session" | "environment" | "none">("none");
+  const [modelCount, setModelCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+
+  const applyGroqSettings = useCallback((payload: GroqSettingsResponse) => {
+    setConfigured(Boolean(payload.configured));
+    setSource(payload.source ?? "none");
+    setModelCount(payload.models?.length ?? 0);
+  }, []);
+
+  const loadGroqSettings = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/groq-settings", { cache: "no-store" });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(readableError(payload, "Could not load Groq settings."));
+      applyGroqSettings((payload ?? {}) as GroqSettingsResponse);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not load Groq settings.");
+    } finally {
+      setLoading(false);
+    }
+  }, [applyGroqSettings]);
+
+  useEffect(() => {
+    // Loading server-held connection status is the intended mount synchronization.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadGroqSettings();
+  }, [loadGroqSettings]);
+
+  const saveGroq = async (event: FormEvent) => {
+    event.preventDefault();
+    const key = apiKey.trim();
+    if (!key) {
+      setError("Enter a Groq API key first.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/groq-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: key }),
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(readableError(payload, "Groq could not verify that key."));
+      const settings = (payload ?? {}) as GroqSettingsResponse;
+      applyGroqSettings(settings);
+      setApiKey("");
+      setShowKey(false);
+      setNotice(`Groq connected — ${settings.models?.length ?? 0} model(s) available on this key.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Groq could not verify that key.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const clearGroq = async () => {
+    setClearing(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/groq-settings", { method: "DELETE" });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(readableError(payload, "Could not clear the Groq session key."));
+      applyGroqSettings((payload ?? {}) as GroqSettingsResponse);
+      setApiKey("");
+      setShowKey(false);
+      setNotice("Session Groq key cleared.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not clear the Groq session key.");
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  const statusLabel = loading
+    ? "Checking"
+    : source === "session"
+      ? "Groq · session"
+      : source === "environment"
+        ? "Groq · environment"
+        : "Groq · not configured";
+
+  return (
+    <form className="flow-settings__card" onSubmit={saveGroq}>
+      <div className="flow-settings__card-head">
+        <span className="flow-settings__step">03</span>
+        <div>
+          <h3>Connect Groq (fallback)</h3>
+          <p>Used automatically if Gemini is unavailable or rate-limited. Free-tier keys work fine.</p>
+        </div>
+        <div className={`flow-settings__state ${configured ? "is-ready" : ""}`} aria-live="polite">
+          <span aria-hidden="true" />{statusLabel}
+        </div>
+      </div>
+
+      <label className="flow-settings__label" htmlFor={keyId}>Groq API key</label>
+      <div className="flow-settings__secret">
+        <input
+          id={keyId}
+          type={showKey ? "text" : "password"}
+          value={apiKey}
+          onChange={(event) => setApiKey(event.target.value)}
+          placeholder="gsk_…"
+          autoComplete="off"
+          spellCheck={false}
+          disabled={saving || clearing}
+        />
+        <button type="button" onClick={() => setShowKey((value) => !value)} aria-pressed={showKey}>
+          {showKey ? "Hide" : "Show"}
+        </button>
+      </div>
+      <p className="flow-settings__hint">
+        The live model list is fetched straight from Groq for this key — only the models your plan actually grants show up.{" "}
+        {configured && modelCount > 0 && `Currently ${modelCount} model(s) available.`}{" "}
+        <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer">Get a free key ↗</a>
+      </p>
+
+      <div className="flow-settings__actions">
+        <button className="flow-settings__primary" type="submit" disabled={saving || clearing || !apiKey.trim()}>
+          {saving ? "Verifying…" : configured ? "Replace & verify key" : "Save & verify key"}
+        </button>
+        {source === "session" && (
+          <button className="flow-settings__quiet" type="button" onClick={clearGroq} disabled={clearing}>
+            {clearing ? "Clearing…" : "Clear session key"}
+          </button>
+        )}
+      </div>
+
+      {(notice || error) && (
+        <div className={`flow-settings__notice ${error ? "is-error" : ""}`} role={error ? "alert" : "status"}>
+          <span aria-hidden="true">{error ? "!" : "✓"}</span>{error || notice}
+        </div>
+      )}
+    </form>
+  );
 }
 
 function RunnerSettingsCard() {
@@ -164,7 +323,7 @@ function RunnerSettingsCard() {
   return (
     <form className="flow-settings__card flow-settings__runner" onSubmit={saveRunner}>
       <div className="flow-settings__card-head flow-settings__card-head--runner">
-        <span className="flow-settings__step">03</span>
+        <span className="flow-settings__step">04</span>
         <div>
           <h3>Connect SandboxAPI</h3>
           <p>Use the hosted sandbox to run Python, C, and Java without installing compilers.</p>
@@ -455,6 +614,7 @@ export default function SettingsPanel({
           </button>
         </div>
 
+        <GroqSettingsCard />
         <RunnerSettingsCard />
       </div>
 

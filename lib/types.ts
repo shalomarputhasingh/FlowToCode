@@ -8,6 +8,7 @@ export type PipelineInfo = {
   typeDiagnostics: Array<{ nodeIndex: number; expr: string; valid: boolean; message: string }>;
   cfgBlocks: Array<{ id: string; kind: string; nodeIds: string[]; statements: string[]; condition?: string; trueTarget?: string; falseTarget?: string; nextTarget?: string }>;
   tac: Array<{ nodeIndex: number; raw: string; before: string[]; after: string[] }>;
+  sampleInput: string;
 };
 
 export type ProviderInfo = {

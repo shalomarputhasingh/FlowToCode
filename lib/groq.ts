@@ -2,8 +2,30 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
+import { getSessionSettings } from "@/lib/session-settings";
+
 const GROQ_TIMEOUT_MS = 15_000;
 const MODEL_CACHE_TTL_MS = 10 * 60 * 1000;
+
+export class GroqConfigurationError extends Error {
+  constructor(message = "Groq is not configured. Add an API key in Settings or set GROQ_API_KEY.") {
+    super(message);
+    this.name = "GroqConfigurationError";
+  }
+}
+
+export function getEnvironmentGroqApiKey() {
+  return process.env.GROQ_API_KEY?.trim() || null;
+}
+
+/** Session key (entered in Settings) takes priority over the environment key. */
+export function getEffectiveGroqSettings(request: Request) {
+  const session = getSessionSettings(request)?.settings;
+  const environmentKey = getEnvironmentGroqApiKey();
+  const apiKey = session?.groqApiKey || environmentKey || null;
+  const keySource: "session" | "environment" | "none" = session?.groqApiKey ? "session" : environmentKey ? "environment" : "none";
+  return { apiKey, keySource } as const;
+}
 
 export type GroqModelOption = {
   id: string;
@@ -55,6 +77,17 @@ function toModelOption(raw: { id?: string; owned_by?: string; context_window?: n
  * cached copy on transient failure so a single flaky request does not take
  * Groq out of the fallback chain.
  */
+export function toPublicGroqError(error: unknown, fallback: string) {
+  if (error instanceof GroqConfigurationError) return { message: error.message, status: 503 };
+  const status = (error as { status?: unknown })?.status;
+  if (status === 401 || status === 403) return { message: "Groq rejected that API key.", status: 400 };
+  if (status === 429) return { message: "Groq's rate limit is reached right now. Try again shortly.", status: 429 };
+  if (error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError")) {
+    return { message: "Groq took too long to respond.", status: 504 };
+  }
+  return { message: fallback, status: 502 };
+}
+
 export async function getAvailableGroqModels(apiKey: string, forceRefresh = false): Promise<GroqModelOption[]> {
   const fingerprint = apiKeyFingerprint(apiKey);
   const cached = modelCache.get(fingerprint);

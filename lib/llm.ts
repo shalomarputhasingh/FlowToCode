@@ -7,7 +7,7 @@ import {
   getGeminiClient,
   type GeminiModelOption,
 } from "@/lib/gemini";
-import { getAvailableGroqModels, type GroqModelOption } from "@/lib/groq";
+import { getAvailableGroqModels, getEffectiveGroqSettings, type GroqModelOption } from "@/lib/groq";
 
 const ATTEMPT_TIMEOUT_MS = 20_000;
 const TOTAL_BUDGET_MS = 55_000;
@@ -161,8 +161,8 @@ function rankGroqModel(model: GroqModelOption) {
   return rank;
 }
 
-async function fallbackCandidates(llm: LlmRequest): Promise<Candidate[]> {
-  const apiKey = process.env.GROQ_API_KEY?.trim();
+async function fallbackCandidates(request: Request, llm: LlmRequest): Promise<Candidate[]> {
+  const apiKey = getEffectiveGroqSettings(request).apiKey;
   if (!apiKey) return [];
 
   let models: GroqModelOption[];
@@ -209,7 +209,7 @@ export async function generateWithFallback<T>(
   parse: (text: string) => T,
 ): Promise<{ value: T; provider: string; model: string }> {
   const deadline = Date.now() + TOTAL_BUDGET_MS;
-  const [geminiList, groqList] = await Promise.all([geminiCandidates(request, llm), fallbackCandidates(llm)]);
+  const [geminiList, groqList] = await Promise.all([geminiCandidates(request, llm), fallbackCandidates(request, llm)]);
   const candidates = [...geminiList, ...groqList];
   if (candidates.length === 0) throw new GeminiConfigurationError(
     "No AI provider is configured. Add a Gemini API key in Settings, or set GROQ_API_KEY.",

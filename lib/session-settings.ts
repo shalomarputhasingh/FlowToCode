@@ -10,6 +10,7 @@ export const SETTINGS_COOKIE = "flowlens_session";
 export type SessionSettings = {
   apiKey?: string;
   model?: string;
+  groqApiKey?: string;
   sandboxApiKey?: string;
   expiresAt: number;
   updatedAt: number;
@@ -54,7 +55,7 @@ function cleanExpiredSessions() {
 }
 
 function hasStoredValues(settings: SessionSettings) {
-  return Boolean(settings.apiKey || settings.model || settings.sandboxApiKey);
+  return Boolean(settings.apiKey || settings.model || settings.groqApiKey || settings.sandboxApiKey);
 }
 
 export function getSessionSettings(request: Request) {

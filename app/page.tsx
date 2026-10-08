@@ -96,7 +96,7 @@ function PipelineDeck({ pipeline, codes }: { pipeline: FlowAnalysis["pipeline"];
         </details>
 
         <details className="pipeline-stage">
-          <summary><b>10–11</b><strong>Three-address code &amp; optimization</strong><small>constant folding · CSE · dead-code elimination</small></summary>
+          <summary><b>10–11</b><strong>Three-address code &amp; optimization</strong><small>constant folding · dead-code elimination</small></summary>
           <div className="pipeline-body">
             {pipeline.tac.map((entry) => (
               <div key={entry.nodeIndex} className="pipeline-tac">
@@ -227,6 +227,7 @@ export default function Home() {
       setCodes(nextAnalysis.codes);
       setPipeline(nextAnalysis.pipeline);
       setAnsweredBy(nextAnalysis.answeredBy);
+      setStdin(nextAnalysis.pipeline.sampleInput);
       setMessages([{
         role: "assistant",
         content: `I’ve mapped “${nextAnalysis.title}”. Ask me about a branch, loop, variable, or any line of code.`,
@@ -471,7 +472,7 @@ export default function Home() {
                 placeholder={"Type values directly here\nUse one line or spaces, for example: 15 4"}
               />
               <small className="console-input-help" id="stdin-help">
-                Add every value before selecting Run code. FlowToCode sends them to the program in this order.
+                Auto-filled with a sample input matching this program's Read order and types — edit it before running.
               </small>
               <div className="output-label"><span>Output</span><small>Sandboxed runner</small></div>
               <pre>{runOutput || "Run the program to see its output here."}</pre>
