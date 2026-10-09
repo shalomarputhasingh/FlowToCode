@@ -12,6 +12,8 @@ import { getAvailableGroqModels, getEffectiveGroqSettings, type GroqModelOption 
 const ATTEMPT_TIMEOUT_MS = 20_000;
 const TOTAL_BUDGET_MS = 55_000;
 const MAX_GEMINI_ATTEMPTS = 4;
+const MAX_GROQ_WAIT_MS = 30_000;
+const MAX_GROQ_RATE_LIMIT_WAITS = 2;
 
 // Used only when Google's live model list cannot be fetched.
 const STATIC_GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"];
@@ -133,12 +135,39 @@ function openAiCandidates(config: OpenAiStyle, llm: LlmRequest): Candidate[] {
           }),
         });
         if (!response.ok) {
-          throw Object.assign(new Error(`${config.provider} responded ${response.status}`), { status: response.status });
+          throw Object.assign(new Error(`${config.provider} responded ${response.status}`), {
+            status: response.status,
+            retryAfterMs: response.status === 429 ? parseRetryAfterMs(response.headers) : undefined,
+          });
         }
         const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
         return payload.choices?.[0]?.message?.content ?? "";
       },
     }));
+}
+
+/** Parses "1.5s", "2m59.56s", "120ms" or plain seconds into milliseconds. */
+function parseDuration(value: string | null) {
+  if (!value) return undefined;
+  const text = value.trim();
+  if (/^\d+(\.\d+)?$/.test(text)) return Math.ceil(Number(text) * 1000);
+  const match = text.match(/^(?:(\d+(?:\.\d+)?)m(?!s))?(?:(\d+(?:\.\d+)?)s)?(?:(\d+(?:\.\d+)?)ms)?$/);
+  if (!match || !match[0]) return undefined;
+  return Math.ceil(Number(match[1] ?? 0) * 60_000 + Number(match[2] ?? 0) * 1000 + Number(match[3] ?? 0));
+}
+
+function parseRetryAfterMs(headers: Headers) {
+  const explicit = parseDuration(headers.get("retry-after"));
+  if (explicit) return explicit;
+  const reset = Math.max(
+    parseDuration(headers.get("x-ratelimit-reset-requests")) ?? 0,
+    parseDuration(headers.get("x-ratelimit-reset-tokens")) ?? 0,
+  );
+  return reset || undefined;
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 function envList(name: string, fallback: string[]) {
@@ -226,18 +255,39 @@ export async function generateWithFallback<T>(
 
   const attempts: LlmAttempt[] = [];
   for (const candidate of candidates) {
-    const remaining = deadline - Date.now();
-    if (remaining < 2_000) break;
-    try {
-      const signal = AbortSignal.timeout(Math.min(ATTEMPT_TIMEOUT_MS, remaining));
-      const text = await candidate.run(signal);
-      if (!text.trim()) throw new Error("Empty response.");
-      return { value: parse(text), provider: candidate.provider, model: candidate.model };
-    } catch (error) {
-      const status = errorStatus(error);
-      const message = error instanceof Error ? error.name : "UnknownError";
-      console.error("LLM attempt failed", { provider: candidate.provider, model: candidate.model, status, message });
-      attempts.push({ provider: candidate.provider, model: candidate.model, status, error: message });
+    let rateLimitWaits = 0;
+    while (true) {
+      const remaining = deadline - Date.now();
+      if (remaining < 2_000) break;
+      try {
+        const signal = AbortSignal.timeout(Math.min(ATTEMPT_TIMEOUT_MS, remaining));
+        const text = await candidate.run(signal);
+        if (!text.trim()) throw new Error("Empty response.");
+        return { value: parse(text), provider: candidate.provider, model: candidate.model };
+      } catch (error) {
+        const status = errorStatus(error);
+        const message = error instanceof Error ? error.name : "UnknownError";
+        console.error("LLM attempt failed", { provider: candidate.provider, model: candidate.model, status, message });
+        attempts.push({ provider: candidate.provider, model: candidate.model, status, error: message });
+
+        // Groq rate limits refresh within seconds, so when the reset fits in
+        // the remaining budget, wait for it and retry the same model rather
+        // than abandoning the only provider that is still healthy.
+        const retryAfterMs = (error as { retryAfterMs?: unknown }).retryAfterMs;
+        if (
+          candidate.provider === "groq" && status === 429 && rateLimitWaits < MAX_GROQ_RATE_LIMIT_WAITS
+          && typeof retryAfterMs === "number"
+        ) {
+          const waitMs = Math.max(retryAfterMs, 500) + 250;
+          if (waitMs <= MAX_GROQ_WAIT_MS && waitMs < deadline - Date.now() - 3_000) {
+            rateLimitWaits += 1;
+            console.error("Waiting for Groq rate limit to refresh", { model: candidate.model, waitMs });
+            await sleep(waitMs);
+            continue;
+          }
+        }
+      }
+      break;
     }
   }
   throw new AllProvidersFailedError(attempts);
